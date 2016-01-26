@@ -1,0 +1,18 @@
+
+require:
+   inquirer-promise as inq
+   chalk
+
+
+async quaint-setup{config, instructions} =
+   url = "https://github.com/breuleux/quaint-google-charts"
+   print 'Plugin documentation: {chalk.bold.cyan{url}}'
+
+   data = config.plugins["google-charts"] or= {=}
+
+   ;; locale language
+
+   ;; data.thing = await inq.input{"Something", {default = "whatever"}}
+
+
+provide = quaint-setup

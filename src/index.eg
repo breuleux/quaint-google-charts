@@ -1,0 +1,112 @@
+
+require:
+   path
+
+reg{@, options} =
+   @register-resources with {
+      "js/google-charts/_.js" => {
+         path = "https://www.gstatic.com/charts/loader.js"
+         path-is-url = true
+         contents = false
+         type = .js
+         method = .head
+      }
+      "js/google-charts/init.js" => {
+         path = path.join{__dirname, "../client/init.js"}
+         contents = true
+         type = .js
+         method = .head
+      }
+   }
+
+var __gid = 0
+
+
+detect-columns{list} =
+   if not Array? list:
+      return false
+   counts = {=}
+   var len = 0
+   list each match entry ->
+      Array? entry ->
+         if keys{counts} != {}:
+            return false
+         if entry.length > len:
+            len = entry.length
+      when len > 0 ->
+         return false
+      String? or Number? or Boolean? or null? or undefined? ->
+         return false
+      items! things ->
+         things each {k, v} ->
+            counts[k] or= 0
+            counts[k] += 1
+      else ->
+         return false
+   len or keys{counts}
+
+
+install{@, options} =
+   reg{@, options}
+
+   @register-macros with {
+      chart{engine, type, body} =
+         id = 'gchart-{__gid += 1}'
+         convert-data{match x} =
+            Array? a ->
+               a each x -> convert-data{x}
+            "null" -> null
+            "true" -> true
+            "false" -> false
+            R"^\"\"$"? s -> JSON.parse{s}
+            R"^-?\d+(\.\d*)?([eE\d-]+)?$"? s -> Number{s}
+            String? s -> s
+            obj ->
+               object with items{obj} each {k, v} -> {k, convert-data{v}}
+
+         params = engine.tools.to-data{body, {leaf{x} = x.raw{}}}
+         params.div-id = id
+         params._type = type.raw{}.trim{}
+         if params.source:
+            if params.data:
+               throw E.quaint-google-charts{"Do not set both source and data."}
+            params.data = engine.macros.data.read{engine, null, params.source}
+            delete params.source
+         params.data = convert-data{params.data}
+         params.data =
+            match params.data:
+               undefined? ->
+                  throw E.quaint-google-charts{"There is no data for this plot."}
+               {String?, *} ->
+                  params.data each entry -> entry.split{R"[, ]+"} each
+                     x -> convert-data{x}
+               {Array?, *} ->
+                  params.data
+               {Object?, *} ->
+                  columns = detect-columns{params.data}
+                  {columns} ++
+                     params.data each entry ->
+                        columns each c -> entry[c]
+               else ->
+                  throw E.quaint-google-charts{"Data should be an array."}
+         params.data[0] =
+            params.data[0] each
+               R"^=(.*)"! {_, role} ->
+                  {= role}
+               column ->
+                  column
+         {
+            div.google-chart % id = id
+            script[raw] %
+               '$$quaintGoogleChartsList.push({JSON.stringify{params}});'
+         }
+   }
+
+main{*match} =
+   {@, options = {=}} when @is-quaint-engine ->
+      install{@, options}
+   {options = {=}} ->
+      {@} -> main{@, options}
+
+provide = main
+
